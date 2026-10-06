@@ -103,8 +103,8 @@ class Indicator(QWidget):
         px = max(scr.left(), min(px, scr.right() - self.W))
         py = max(scr.top(), min(py, scr.bottom() - self.H))
         self.move(px, py)
-        self.show()
-        self.raise_()
+        if self.isVisible():
+            self.raise_()
         try:
             (Path.home() / ".local" / "state" / "dictation" / "indicator.geom").write_text(
                 f"{px},{py},{self.W},{self.H},active={g},avail={scr.getRect()}")

@@ -52,9 +52,22 @@ class Daemon:
         self.cfg = cfg
         self.recording = False
         self.proc: subprocess.Popen | None = None
+        self.t0 = 0.0
         self.ind = indmod.Indicator()
         indmod.ANCHOR = cfg["indicator_anchor"]
         self.ind.hide()
+        QTimer(self.ind, timeout=self._watchdog, interval=1000).start()
+
+    def _watchdog(self) -> None:
+        """Segurança: se o ffmpeg morrer ou o stop se perder, encerra e transcreve."""
+        if not self.recording:
+            return
+        proc = self.proc
+        expired = self.t0 and self.cfg["max_seconds"] and (time.time() - self.t0) > self.cfg["max_seconds"] + 1
+        if (proc and proc.poll() is not None) or expired:
+            self.recording = False
+            self.ind.hide()
+            threading.Thread(target=self._finish, args=(getattr(self, "wav", None), proc), daemon=True).start()
 
     # ---------------------------------------------------------------- audio
     def start(self) -> str:
@@ -71,6 +84,7 @@ class Daemon:
         self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.recording = True
+        self.t0 = time.time()
         if self.cfg["indicator"]:
             self.ind.show()
             self.ind.reposition()
