@@ -191,7 +191,7 @@ class Daemon(QObject):
         src = core.default_source(self.cfg)
         self.raw = self.cfg["state_dir"] / "rec.raw"
         cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "pulse", "-i", src,
-               "-ar", "16000", "-ac", "1", "-f", "s16le"]
+               "-ar", "16000", "-ac", "1", "-flush_packets", "1", "-f", "s16le"]
         if self.cfg["max_seconds"]:
             cmd += ["-t", str(self.cfg["max_seconds"])]
         cmd += [str(self.raw)]
