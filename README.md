@@ -64,8 +64,12 @@ shortcut through KGlobalAccel (`services` component).
 
 ### 3. Use it
 
-Press the hotkey → **● REC** appears near the focused window → speak → press
-again → the text is typed at your cursor.
+Press the dictation hotkey (default **F8**) → **● REC** appears near the focused
+window → speak → press again → the text is typed at your cursor.
+
+To **teach a correction**: select the misheard word, press the teach hotkey
+(**F9**) → the dialog opens → press **F8** and **speak the correct word** (it lands in
+the field) → press **F9** again to save and close.
 
 ## Configuration (`~/.config/dictation/config.ini`)
 
@@ -93,18 +97,27 @@ dictation teach "wrong" "right" [--vocab]    # learn a correction
 
 ## Teaching corrections
 
-When the transcriber gets something wrong, teach it — no restart needed:
+**Fastest (no terminal)** — when a word comes out wrong:
+
+1. **Select** the misheard word in your editor.
+2. Press the **teach hotkey** (default **F9**) → dialog opens, *Errado* prefilled.
+3. Press the **dictation hotkey** (**F8**) and **speak the correct word** — it is typed
+   into the *Certo* field (or just type it). Tick *vocabulary* to also bias the ASR prompt.
+4. Press the **teach hotkey** (**F9**) again → **saves and closes**.
+
+Saved instantly (read on every use, no restart). Also available from the CLI and the
+tray menu:
 
 ```bash
-dictation teach "tu linho" "Tulinho"          # deterministic fix (corrections.tsv)
-dictation teach "presel" "presell" --vocab    # also biases the ASR vocabulary prompt
+dictation teach                                # opens the dialog
+dictation teach "tu linho" "Tulinho"           # deterministic fix (corrections.tsv)
+dictation teach "presel" "presell" --vocab     # also biases the ASR vocabulary prompt
+dictation last                                 # last transcription (to spot errors)
 ```
 
 - `corrections.tsv`: `wrong<TAB>right`, applied (case-insensitive, word-boundary)
   after every transcription.
 - `vocab.txt`: terms fed to the ASR `prompt` to spell names/technical words right.
-- Both files are read on each use, so changes apply immediately. You can also edit
-  them from the tray menu.
 
 ## How it works
 

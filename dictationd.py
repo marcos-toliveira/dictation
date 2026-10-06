@@ -22,10 +22,19 @@ import threading
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QLineEdit,
+    QMenu,
+    QSystemTrayIcon,
+)
 
 HOME = Path.home()
 BIN = HOME / ".local" / "bin"
@@ -54,6 +63,10 @@ class Daemon:
         self.recording = False
         self.proc: subprocess.Popen | None = None
         self.t0 = 0.0
+        self._dlg = None
+        self._dlg_wrong = None
+        self._dlg_right = None
+        self._dlg_vocab = None
         self.ind = indmod.Indicator()
         indmod.ANCHOR = cfg["indicator_anchor"]
         self.ind.hide()
@@ -65,6 +78,7 @@ class Daemon:
         self.tray = QSystemTrayIcon(QIcon.fromTheme("audio-input-microphone"), self.ind)
         menu = QMenu()
         menu.addAction("Iniciar / parar").triggered.connect(lambda: self.handle("toggle"))
+        menu.addAction("Ensinar correção…").triggered.connect(lambda: self.handle("teach"))
         menu.addSeparator()
         menu.addAction("Editar correções (teach)").triggered.connect(lambda: self._open(self.cfg["corrections"]))
         menu.addAction("Editar vocabulário").triggered.connect(lambda: self._open(self.cfg["vocab"]))
@@ -82,6 +96,59 @@ class Daemon:
     def _open(self, path) -> None:
         subprocess.Popen(["xdg-open", str(path)], stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def _selection(self) -> str:
+        """Texto selecionado (primary/clipboard) ou a última transcrição."""
+        for sel in ("primary", "clipboard"):
+            try:
+                r = subprocess.run(["xclip", "-o", "-selection", sel],
+                                   capture_output=True, text=True, timeout=1)
+                if r.returncode == 0 and r.stdout.strip():
+                    return r.stdout.strip()[:200]
+            except Exception:  # noqa: BLE001
+                pass
+        last = self.cfg["state_dir"] / "last.txt"
+        return last.read_text(encoding="utf-8").strip()[:200] if last.is_file() else ""
+
+    def _teach_dialog(self) -> None:
+        """Abre o diálogo (não-modal) para ensinar uma correção."""
+        if self._dlg is not None:
+            return
+        dlg = QDialog()
+        dlg.setWindowTitle("Ensinar correção")
+        dlg.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        form = QFormLayout(dlg)
+        wrong = QLineEdit(self._selection())
+        right = QLineEdit()
+        right.setPlaceholderText("F8 e fale (o texto entra aqui) — F9 salva e fecha")
+        vocab = QCheckBox("Adicionar também ao vocabulário (viés do ASR)")
+        form.addRow("Errado:", wrong)
+        form.addRow("Certo:", right)
+        form.addRow(vocab)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(self._teach_save)
+        bb.rejected.connect(self._teach_close)
+        form.addRow(bb)
+        self._dlg, self._dlg_wrong, self._dlg_right, self._dlg_vocab = dlg, wrong, right, vocab
+        dlg.show()
+        dlg.activateWindow()
+        dlg.raise_()
+        right.setFocus()
+
+    def _teach_save(self) -> None:
+        if self._dlg is None:
+            return
+        w = self._dlg_wrong.text().strip()
+        r = self._dlg_right.text().strip()
+        v = self._dlg_vocab.isChecked()
+        if w and r:
+            core.cmd_teach(self.cfg, w, r, v)
+        self._teach_close()
+
+    def _teach_close(self) -> None:
+        if self._dlg is not None:
+            self._dlg.close()
+        self._dlg = None
 
     def _set_tray(self, state: str) -> None:
         if state == "rec":
@@ -170,6 +237,12 @@ class Daemon:
             return self.stop() if self.recording else self.start()
         if cmd == "status":
             return "gravando" if self.recording else "ocioso"
+        if cmd == "teach":
+            if self._dlg is not None:
+                self._teach_save()
+                return "salvo"
+            self._teach_dialog()
+            return "aberto"
         if cmd == "quit":
             QTimer.singleShot(0, QApplication.instance().quit)
             return "bye"

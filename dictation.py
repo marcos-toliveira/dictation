@@ -365,9 +365,15 @@ def main(argv: list[str]) -> int:
     cfg = load_config(Path(os.path.expanduser(args.config)))
 
     if args.cmd == "teach":
-        if not args.file or not args.right:
-            ap.error("uso: dictation teach <errado> <certo> [--vocab]")
-        return cmd_teach(cfg, args.file, args.right, args.vocab)
+        if args.file and args.right:
+            return cmd_teach(cfg, args.file, args.right, args.vocab)
+        # sem argumentos → abre o diálogo no daemon (preenche com a seleção)
+        ensure_daemon()
+        reply = send_daemon("teach")
+        if reply is None:
+            print("daemon indisponível — use: dictation teach <errado> <certo>", file=sys.stderr)
+            return 1
+        return 0
     if args.cmd == "last":
         last = cfg["state_dir"] / "last.txt"
         print(last.read_text(encoding="utf-8") if last.is_file() else "", end="")
