@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+
+# Local config / secrets (only *.example is tracked)
+config.ini
+vocab.txt
+corrections.tsv
+*.env
+.env
+
+# Logs / temp
+*.log
+*.wav

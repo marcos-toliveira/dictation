@@ -1,0 +1,37 @@
+; ==============================================================================
+; config.ini — ditado por voz (dictation)
+; Copiado para ~/.config/dictation/config.ini pelo install.sh
+; ==============================================================================
+[dictation]
+; provedor de transcrição: groq (online, recomendado) | local (whisper.cpp)
+provider = groq
+; idioma falado (ISO-639-1). Use "auto" para detectar.
+language = pt
+; modelo do Groq (ou override via GROQ_MODEL no cofre)
+model = whisper-large-v3-turbo
+; dispositivo/fonte de captura vazio = fonte padrão do PipeWire (pactl get-default-source)
+device =
+; limite de segurança da gravação (segundos)
+max_seconds = 180
+; como digitar o texto: type (xdotool, universal) | clipboard (Ctrl+V) | stdout
+inject = type
+type_delay_ms = 6
+trailing_space = true
+notify = true
+; indicador flutuante "REC" ancorado na janela em foco (PySide6; click-through)
+indicator = true
+; posição: bottom-right | bottom-center | top-right | top-left | mouse
+indicator_anchor = bottom-right
+
+[paths]
+vault = ~/.config/anubis/groq.env
+indicator_bin = ~/.local/bin/dictation-indicator
+vocab = ~/.config/dictation/vocab.txt
+corrections = ~/.config/dictation/corrections.tsv
+state_dir = ~/.local/state/dictation
+
+[local]
+; fallback offline (whisper.cpp)
+whisper_bin = ~/.local/bin/whisper-cli
+model = ~/.local/share/whisper.cpp/models/ggml-small.bin
+threads = 4

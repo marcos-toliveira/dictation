@@ -1,0 +1,24 @@
+# vocab.txt — termos que o transcritor deve conhecer (viés do prompt, 1 por linha)
+# Tudo aqui entra no parâmetro `prompt` do Groq para acertar nomes/termos técnicos.
+OpenCode
+OpenClaw
+Tulinho
+Hermes
+Claude
+DeepSeek
+Google Ads
+ClickBank
+presell
+presell-audit
+GAQL
+RSA
+campanha
+BOFU
+dashboard
+commit
+deploy
+pull request
+MongoDB
+PipeWire
+whisper.cpp
+Parakeet

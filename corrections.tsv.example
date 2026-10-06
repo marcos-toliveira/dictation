@@ -1,0 +1,10 @@
+# corrections.tsv — correções determinísticas aplicadas após a transcrição.
+# Formato: original<TAB>correção   (ou original=>correção). Ignora maiúsc./minúsc.
+# Ótimo para erros recorrentes do ASR ("Tu linho" -> "Tulinho").
+Tu linho	Tulinho
+open code	OpenCode
+open claw	OpenClaw
+googlads	Google Ads
+click bank	ClickBank
+presel	presell
+pre sell	presell
