@@ -17,6 +17,11 @@ to a fast online engine by default, keeps a warm daemon so recording starts in
 - **Offline fallback** via local `whisper.cpp` if the network/API fails.
 - **Floating indicator** (PySide6/Qt6): frameless, translucent, click-through,
   never steals focus, anchored to the active window (multi-monitor aware).
+- **System tray icon**: shows the daemon is alive (mic = idle, red = recording),
+  with a menu to toggle, edit corrections/vocabulary and quit.
+- **Teaching loop**: `dictation teach "wrong" "right"` records a correction (and
+  optionally adds the term to the vocabulary prompt); `dictation last` shows the
+  last transcription so you can spot what to fix.
 - **Secrets never in argv/chat**: the API key lives in a `0600` vault.
 
 ## Requirements
@@ -82,7 +87,24 @@ applies `wrong<TAB>right` fixes after transcription.
 dictation toggle | start | stop | status
 dictation transcribe audio.wav --to stdout   # test without typing
 dictation transcribe audio.wav --provider local
+dictation last                               # last transcription
+dictation teach "wrong" "right" [--vocab]    # learn a correction
 ```
+
+## Teaching corrections
+
+When the transcriber gets something wrong, teach it — no restart needed:
+
+```bash
+dictation teach "tu linho" "Tulinho"          # deterministic fix (corrections.tsv)
+dictation teach "presel" "presell" --vocab    # also biases the ASR vocabulary prompt
+```
+
+- `corrections.tsv`: `wrong<TAB>right`, applied (case-insensitive, word-boundary)
+  after every transcription.
+- `vocab.txt`: terms fed to the ASR `prompt` to spell names/technical words right.
+- Both files are read on each use, so changes apply immediately. You can also edit
+  them from the tray menu.
 
 ## How it works
 

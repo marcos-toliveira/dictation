@@ -118,6 +118,34 @@ def apply_corrections(text: str, rules: list[tuple[re.Pattern, str]]) -> str:
     return text
 
 
+def save_last(cfg: dict, text: str) -> None:
+    try:
+        (cfg["state_dir"] / "last.txt").write_text(text, encoding="utf-8")
+    except OSError:
+        pass
+
+
+def cmd_teach(cfg: dict, wrong: str, right: str, add_vocab: bool) -> int:
+    """Ensina uma correção: grava 'errado<TAB>certo' (e opcionalmente no vocabulário)."""
+    corr = cfg["corrections"]
+    corr.parent.mkdir(parents=True, exist_ok=True)
+    lines = corr.read_text(encoding="utf-8").splitlines() if corr.is_file() else []
+    pat = re.compile(rf"^\s*{re.escape(wrong)}\s*(?:\t|=>)", re.IGNORECASE)
+    lines = [l for l in lines if not pat.match(l)]
+    lines.append(f"{wrong}\t{right}")
+    corr.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    extra = ""
+    if add_vocab:
+        vocab = cfg["vocab"]
+        terms = vocab.read_text(encoding="utf-8").splitlines() if vocab.is_file() else []
+        if right not in terms:
+            terms.append(right)
+            vocab.write_text("\n".join(terms) + "\n", encoding="utf-8")
+        extra = " (+vocab)"
+    print(f"ok: '{wrong}' → '{right}'{extra}")
+    return 0
+
+
 # ----------------------------------------------------------------- ASR: groq
 def transcribe_groq(cfg: dict, wav: Path) -> str:
     env = read_vault_env(cfg["vault"])
@@ -263,6 +291,7 @@ def do_stop(cfg: dict, to: str | None, provider: str | None) -> int:
         notify(cfg, "⚠️ dictation", "nada reconhecido")
         print("", end="")
         return 0
+    save_last(cfg, text)
     inject(cfg, text, to)
     return 0
 
@@ -324,14 +353,25 @@ def send_daemon(cmd: str) -> str | None:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="dictation", description="ditado por voz push-to-talk")
-    ap.add_argument("cmd", choices=["start", "stop", "toggle", "status", "transcribe"])
+    ap.add_argument("cmd", choices=["start", "stop", "toggle", "status", "transcribe", "teach", "last"])
     ap.add_argument("file", nargs="?")
+    ap.add_argument("right", nargs="?")
     ap.add_argument("--config", default=str(DEFAULT_CONFIG))
     ap.add_argument("--provider", choices=["groq", "local"])
     ap.add_argument("--to", choices=["stdout", "type", "clipboard"])
+    ap.add_argument("--vocab", action="store_true", help="também adiciona o termo correto ao vocabulário")
     args = ap.parse_args(argv)
 
     cfg = load_config(Path(os.path.expanduser(args.config)))
+
+    if args.cmd == "teach":
+        if not args.file or not args.right:
+            ap.error("uso: dictation teach <errado> <certo> [--vocab]")
+        return cmd_teach(cfg, args.file, args.right, args.vocab)
+    if args.cmd == "last":
+        last = cfg["state_dir"] / "last.txt"
+        print(last.read_text(encoding="utf-8") if last.is_file() else "", end="")
+        return 0
 
     # daemon quente (se no ar e sem overrides) — captura em ~50ms
     if args.cmd in ("start", "stop", "toggle", "status") and not args.to and not args.provider:

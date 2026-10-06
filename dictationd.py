@@ -23,8 +23,9 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 HOME = Path.home()
 BIN = HOME / ".local" / "bin"
@@ -56,7 +57,39 @@ class Daemon:
         self.ind = indmod.Indicator()
         indmod.ANCHOR = cfg["indicator_anchor"]
         self.ind.hide()
+        self._build_tray()
         QTimer(self.ind, timeout=self._watchdog, interval=1000).start()
+
+    def _build_tray(self) -> None:
+        """Ícone na bandeja: indica que o daemon está de pé (e o estado)."""
+        self.tray = QSystemTrayIcon(QIcon.fromTheme("audio-input-microphone"), self.ind)
+        menu = QMenu()
+        menu.addAction("Iniciar / parar").triggered.connect(lambda: self.handle("toggle"))
+        menu.addSeparator()
+        menu.addAction("Editar correções (teach)").triggered.connect(lambda: self._open(self.cfg["corrections"]))
+        menu.addAction("Editar vocabulário").triggered.connect(lambda: self._open(self.cfg["vocab"]))
+        menu.addSeparator()
+        menu.addAction("Sair").triggered.connect(lambda: QApplication.instance().quit())
+        self.tray.setContextMenu(menu)
+        self.tray.activated.connect(self._tray_activated)
+        self._set_tray("idle")
+        self.tray.show()
+
+    def _tray_activated(self, reason) -> None:
+        if reason == QSystemTrayIcon.Trigger:  # clique esquerdo
+            self.handle("toggle")
+
+    def _open(self, path) -> None:
+        subprocess.Popen(["xdg-open", str(path)], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def _set_tray(self, state: str) -> None:
+        if state == "rec":
+            self.tray.setIcon(QIcon.fromTheme("media-record"))
+            self.tray.setToolTip("Dictation — GRAVANDO")
+        else:
+            self.tray.setIcon(QIcon.fromTheme("audio-input-microphone"))
+            self.tray.setToolTip("Dictation — ocioso (F8)")
 
     def _watchdog(self) -> None:
         """Segurança: se o ffmpeg morrer ou o stop se perder, encerra e transcreve."""
@@ -67,6 +100,7 @@ class Daemon:
         if (proc and proc.poll() is not None) or expired:
             self.recording = False
             self.ind.hide()
+            self._set_tray("idle")
             threading.Thread(target=self._finish, args=(getattr(self, "wav", None), proc), daemon=True).start()
 
     # ---------------------------------------------------------------- audio
@@ -90,6 +124,7 @@ class Daemon:
             self.ind.reposition()
         else:
             core.notify(self.cfg, "🎙️ Gravando…", "")
+        self._set_tray("rec")
         return "gravando"
 
     def stop(self) -> str:
@@ -97,6 +132,7 @@ class Daemon:
             return "nada gravando"
         self.recording = False
         self.ind.hide()
+        self._set_tray("idle")
         wav = getattr(self, "wav", None)
         proc = self.proc
         threading.Thread(target=self._finish, args=(wav, proc), daemon=True).start()
@@ -118,6 +154,7 @@ class Daemon:
             text = core.transcribe(self.cfg, wav)
             text = core.apply_corrections(text, core.load_corrections(self.cfg["corrections"]))
             if text:
+                core.save_last(self.cfg, text)
                 core.inject(self.cfg, text)
         except Exception as exc:  # noqa: BLE001
             core.notify(self.cfg, "⚠️ dictation", str(exc)[:120])
@@ -153,6 +190,9 @@ def main() -> int:
         return 0
 
     app = QApplication(sys.argv[:1])
+    app.setApplicationName("Dictation")
+    app.setApplicationDisplayName("Dictation")
+    app.setDesktopFileName("dictation")
     daemon = Daemon(cfg)
 
     path = sock_path()
