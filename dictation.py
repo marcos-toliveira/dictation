@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import time
@@ -52,6 +53,9 @@ def load_config(path: Path) -> dict:
         "notify": cp.getboolean("dictation", "notify", fallback=True),
         "indicator": cp.getboolean("dictation", "indicator", fallback=True),
         "indicator_anchor": cp.get("dictation", "indicator_anchor", fallback="bottom-right"),
+        "preview": cp.getboolean("dictation", "preview", fallback=True),
+        "preview_interval_ms": cp.getint("dictation", "preview_interval_ms", fallback=1500),
+        "preview_anchor": cp.get("dictation", "preview_anchor", fallback="bottom-center"),
         "indicator_bin": Path(os.path.expanduser(cp.get("paths", "indicator_bin", fallback="~/.local/bin/dictation-indicator"))),
         "vault": Path(os.path.expanduser(cp.get("paths", "vault", fallback="~/.config/anubis/groq.env"))),
         "vocab": Path(os.path.expanduser(cp.get("paths", "vocab", fallback="~/.config/dictation/vocab.txt"))),
@@ -147,13 +151,22 @@ def cmd_teach(cfg: dict, wrong: str, right: str, add_vocab: bool) -> int:
 
 
 # ----------------------------------------------------------------- ASR: groq
-def transcribe_groq(cfg: dict, wav: Path) -> str:
+def raw_to_wav(raw: bytes, rate: int = 16000, channels: int = 1, bits: int = 16) -> bytes:
+    """Empacota PCM s16le cru num contêiner WAV (para enviar/transcrever)."""
+    byte_rate = rate * channels * bits // 8
+    block_align = channels * bits // 8
+    header = b"RIFF" + struct.pack("<I", 36 + len(raw)) + b"WAVE"
+    header += b"fmt " + struct.pack("<IHHIIHH", 16, 1, channels, rate, byte_rate, block_align, bits)
+    header += b"data" + struct.pack("<I", len(raw))
+    return header + raw
+
+
+def transcribe_groq_bytes(cfg: dict, data: bytes, filename: str = "audio.wav") -> str:
     env = read_vault_env(cfg["vault"])
     key = env.get("GROQ_API_KEY")
     if not key:
         raise RuntimeError(f"GROQ_API_KEY ausente em {cfg['vault']}")
     model = env.get("GROQ_MODEL") or cfg["model"]
-    data = wav.read_bytes()
     bnd = uuid.uuid4().hex
     fields = {"model": model, "response_format": "json"}
     if cfg["language"] and cfg["language"] != "auto":
@@ -162,7 +175,7 @@ def transcribe_groq(cfg: dict, wav: Path) -> str:
     if vocab:
         fields["prompt"] = vocab
     parts = [f'--{bnd}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode() for k, v in fields.items()]
-    parts.append(f'--{bnd}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n'.encode() + data + b"\r\n")
+    parts.append(f'--{bnd}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\nContent-Type: audio/wav\r\n\r\n'.encode() + data + b"\r\n")
     parts.append(f"--{bnd}--\r\n".encode())
     conn = http.client.HTTPSConnection("api.groq.com", timeout=90)
     try:
@@ -175,6 +188,10 @@ def transcribe_groq(cfg: dict, wav: Path) -> str:
     if resp.status != 200:
         raise RuntimeError(f"Groq HTTP {resp.status}: {body[:200].decode(errors='replace')}")
     return json.loads(body).get("text", "").strip()
+
+
+def transcribe_groq(cfg: dict, wav: Path) -> str:
+    return transcribe_groq_bytes(cfg, wav.read_bytes())
 
 
 # ----------------------------------------------------------------- ASR: local

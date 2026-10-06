@@ -22,6 +22,11 @@ notify = true
 indicator = true
 ; posição: bottom-right | bottom-center | top-right | top-left | mouse
 indicator_anchor = bottom-right
+; prévia ao vivo do texto enquanto fala (pseudo-streaming via Groq; só com provider=groq)
+preview = true
+preview_interval_ms = 1500
+; posição da prévia: bottom-center | bottom-right | top-right | top-left | mouse
+preview_anchor = bottom-center
 
 [paths]
 vault = ~/.config/anubis/groq.env

@@ -22,7 +22,7 @@ import threading
 import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
@@ -57,8 +57,11 @@ def sock_path() -> str:
     return os.path.join(base, "dictation.sock")
 
 
-class Daemon:
+class Daemon(QObject):
+    previewReady = Signal(str)
+
     def __init__(self, cfg: dict):
+        super().__init__()
         self.cfg = cfg
         self.recording = False
         self.proc: subprocess.Popen | None = None
@@ -67,9 +70,16 @@ class Daemon:
         self._dlg_wrong = None
         self._dlg_right = None
         self._dlg_vocab = None
+        self._gen = 0
+        self._preview_busy = False
+        self._last_raw = 0
+        self._preview_on = bool(cfg["preview"]) and cfg["provider"] == "groq"
         self.ind = indmod.Indicator()
         indmod.ANCHOR = cfg["indicator_anchor"]
         self.ind.hide()
+        self.preview = indmod.Preview(cfg["preview_anchor"])
+        self.previewReady.connect(self.preview.set_text)
+        self._ptimer = QTimer(self, timeout=self._preview_tick, interval=cfg["preview_interval_ms"])
         self._build_tray()
         QTimer(self.ind, timeout=self._watchdog, interval=1000).start()
 
@@ -166,9 +176,12 @@ class Daemon:
         expired = self.t0 and self.cfg["max_seconds"] and (time.time() - self.t0) > self.cfg["max_seconds"] + 1
         if (proc and proc.poll() is not None) or expired:
             self.recording = False
+            self._gen += 1
+            self._ptimer.stop()
+            self.preview.set_text("")
             self.ind.hide()
             self._set_tray("idle")
-            threading.Thread(target=self._finish, args=(getattr(self, "wav", None), proc), daemon=True).start()
+            threading.Thread(target=self._finish, args=(getattr(self, "raw", None), proc), daemon=True).start()
 
     # ---------------------------------------------------------------- audio
     def start(self) -> str:
@@ -176,16 +189,21 @@ class Daemon:
             return "já gravando"
         self.cfg["state_dir"].mkdir(parents=True, exist_ok=True)
         src = core.default_source(self.cfg)
+        self.raw = self.cfg["state_dir"] / "rec.raw"
         cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "pulse", "-i", src,
-               "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le"]
+               "-ar", "16000", "-ac", "1", "-f", "s16le"]
         if self.cfg["max_seconds"]:
             cmd += ["-t", str(self.cfg["max_seconds"])]
-        self.wav = self.cfg["state_dir"] / "rec.wav"
-        cmd += [str(self.wav)]
+        cmd += [str(self.raw)]
         self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.recording = True
         self.t0 = time.time()
+        self._gen += 1
+        self._last_raw = 0
+        self.preview.set_text("")
+        if self._preview_on:
+            self._ptimer.start()
         if self.cfg["indicator"]:
             self.ind.show()
             self.ind.reposition()
@@ -198,14 +216,17 @@ class Daemon:
         if not self.recording:
             return "nada gravando"
         self.recording = False
+        self._gen += 1
+        self._ptimer.stop()
+        self.preview.set_text("")
         self.ind.hide()
         self._set_tray("idle")
-        wav = getattr(self, "wav", None)
+        raw = getattr(self, "raw", None)
         proc = self.proc
-        threading.Thread(target=self._finish, args=(wav, proc), daemon=True).start()
+        threading.Thread(target=self._finish, args=(raw, proc), daemon=True).start()
         return "transcrevendo"
 
-    def _finish(self, wav, proc) -> None:
+    def _finish(self, raw, proc) -> None:
         try:
             if proc and proc.poll() is None:
                 proc.send_signal(signal.SIGINT)
@@ -215,9 +236,12 @@ class Daemon:
                     time.sleep(0.05)
                 else:
                     proc.kill()
-            if not wav or not wav.is_file() or wav.stat().st_size < 1000:
+            data = raw.read_bytes() if raw and raw.is_file() else b""
+            if len(data) < 8000:  # < ~0.25s de áudio
                 core.notify(self.cfg, "⚠️ dictation", "gravação vazia")
                 return
+            wav = self.cfg["state_dir"] / "rec.wav"
+            wav.write_bytes(core.raw_to_wav(data))
             text = core.transcribe(self.cfg, wav)
             text = core.apply_corrections(text, core.load_corrections(self.cfg["corrections"]))
             if text:
@@ -225,6 +249,35 @@ class Daemon:
                 core.inject(self.cfg, text)
         except Exception as exc:  # noqa: BLE001
             core.notify(self.cfg, "⚠️ dictation", str(exc)[:120])
+
+    def _preview_tick(self) -> None:
+        """Prévia ao vivo: reenvia o áudio acumulado ao Groq e atualiza a bolha."""
+        if not self.recording or self._preview_busy:
+            return
+        raw_path = getattr(self, "raw", None)
+        try:
+            raw = raw_path.read_bytes() if raw_path and raw_path.is_file() else b""
+        except OSError:
+            return
+        if len(raw) < 32000 or len(raw) == self._last_raw:  # < ~1s ou nada novo
+            return
+        self._last_raw = len(raw)
+        gen = self._gen
+        data = core.raw_to_wav(raw)
+        self._preview_busy = True
+
+        def work():
+            try:
+                t = core.transcribe_groq_bytes(self.cfg, data)
+                t = core.apply_corrections(t, core.load_corrections(self.cfg["corrections"]))
+                if gen == self._gen:
+                    self.previewReady.emit(t)
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                self._preview_busy = False
+
+        threading.Thread(target=work, daemon=True).start()
 
     # ---------------------------------------------------------------- socket
     def handle(self, line: str) -> str:
