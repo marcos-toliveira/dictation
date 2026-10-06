@@ -48,7 +48,7 @@ def _load(path: Path, name: str):
     return mod
 
 
-core = _load(BIN / "dictation", "dictation_core")
+core = _load(BIN / "dictation.py", "dictation_core")
 indmod = _load(BIN / "dictation-indicator", "dictation_indicator")
 
 

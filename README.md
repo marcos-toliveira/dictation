@@ -12,6 +12,7 @@ to a fast online engine by default, keeps a warm daemon so recording starts in
 - **Global hotkeys** (KDE Plasma 6 / KGlobalAccel): dictate and teach.
 - **Warm daemon** (`dictationd`): indicator preloaded, commands over a local
   socket, so capture starts almost immediately (no Python/Qt boot per use).
+- **Fast hotkey client**: a tiny `socat` wrapper (~10ms) with a Python fallback.
 - **Online ASR** via Groq `whisper-large-v3-turbo` (OpenAI-compatible), with a
   **vocabulary prompt** for technical terms and **deterministic corrections**.
 - **Offline fallback** via local `whisper.cpp` if the network/API fails.
@@ -29,16 +30,17 @@ to a fast online engine by default, keeps a warm daemon so recording starts in
 
 - Linux with **X11** (KDE Plasma 6 tested) · PipeWire or PulseAudio
 - `ffmpeg`, `xdotool`, `xclip`, Python 3 + **PySide6** (Qt6)
+- `socat` (optional): fast hotkey client (~10ms); without it, falls back to Python
 - Optional: `whisper.cpp` (`whisper-cli` + a ggml model) for the offline fallback
 
 Dependencies:
 
 ```bash
 # Arch / Manjaro
-sudo pacman -S --needed ffmpeg xdotool xclip pyside6 libnotify
+sudo pacman -S --needed ffmpeg xdotool xclip socat pyside6 libnotify
 
 # Debian / Ubuntu
-sudo apt install ffmpeg xdotool xclip libnotify-bin python3-pyside6.qtwidgets
+sudo apt install ffmpeg xdotool xclip socat libnotify-bin python3-pyside6.qtwidgets
 
 # any distro (fallback for PySide6)
 pip install --user PySide6
@@ -51,10 +53,14 @@ git clone https://github.com/marcos-toliveira/dictation && cd dictation
 bash install.sh
 ```
 
-`install.sh` installs `~/.local/bin/{dictation,dictationd,dictation-indicator}`,
+`install.sh` installs `~/.local/bin/{dictation,dictation.py,dictationd,dictation-indicator}`,
 creates `~/.config/dictation/{config.ini,vocab.txt,corrections.tsv}` (without
 overwriting existing ones), and adds the daemon autostart entry
 (`~/.config/autostart/dictationd.desktop`).
+
+> `dictation` is a tiny **socat** client that talks to the daemon over a Unix socket
+> (~10ms per hotkey press); if the daemon is down it falls back to the Python client
+> (`dictation.py`), which auto-starts the daemon.
 
 ### 1. API key (Groq)
 

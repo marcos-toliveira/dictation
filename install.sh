@@ -12,7 +12,8 @@ CFG_DIR="$HOME/.config/dictation"
 STATE_DIR="$HOME/.local/state/dictation"
 
 mkdir -p "$BIN_DIR" "$CFG_DIR" "$STATE_DIR"
-install -m 755 "$SRC/dictation.py" "$BIN_DIR/dictation"
+install -m 755 "$SRC/dictation.py" "$BIN_DIR/dictation.py"
+install -m 755 "$SRC/dictation" "$BIN_DIR/dictation"
 install -m 755 "$SRC/dictation-indicator.py" "$BIN_DIR/dictation-indicator"
 install -m 755 "$SRC/dictationd.py" "$BIN_DIR/dictationd"
 

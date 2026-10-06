@@ -1,0 +1,24 @@
+#!/bin/sh
+# ==============================================================================
+# dictation — cliente rápido (socat) com fallback para o cliente Python.
+#
+# Caminho quente (atalho): fala com o daemon por socket Unix (~10ms, sem o boot
+# do Python). Se o daemon estiver fora, ou o comando tiver argumentos/flags,
+# delega para o cliente Python (~/.local/bin/dictation.py).
+# ==============================================================================
+SOCK="${XDG_RUNTIME_DIR:-/tmp}/dictation.sock"
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+if [ "$#" -eq 1 ] && command -v socat >/dev/null 2>&1 && [ -S "$SOCK" ]; then
+    case "$1" in
+        toggle|start|stop|status|teach)
+            out=$(printf '%s\n' "$1" | socat -t2 - UNIX-CONNECT:"$SOCK" 2>/dev/null)
+            if [ -n "$out" ]; then
+                printf '%s\n' "$out"
+                exit 0
+            fi
+            ;;
+    esac
+fi
+
+exec python3 "$DIR/dictation.py" "$@"
